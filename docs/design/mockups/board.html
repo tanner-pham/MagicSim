@@ -1,0 +1,240 @@
+<!doctype html>
+<!--
+  MagicSim visual direction mockup. Not production code.
+  Params: ?device=phone|duo  &sheet=card  (card action sheet open)
+  The `state` object below mirrors the protocol `observation` + `decision` shapes in the spec.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MagicSim mockup</title>
+<script src="cards.js"></script>
+<style>
+  :root {
+    --bg: #000;
+    --text: #fff;
+    --text-2: rgba(255,255,255,.64);
+    --text-3: rgba(255,255,255,.40);
+    --hairline: rgba(255,255,255,.10);
+    --surface: rgba(255,255,255,.06);
+    --surface-2: rgba(255,255,255,.12);
+    --glow: 0 0 0 1.5px #fff, 0 0 18px rgba(255,255,255,.35);
+    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px;
+    --r-card: 6px; --r-panel: 14px;
+    --fade: 20px;
+    --safe-top: 62px; --safe-bottom: 34px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--text); font: 13px/1.3 -apple-system, "SF Pro Text", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  body, #root { width: 100vw; height: 100vh; overflow: hidden; }
+  .screen { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; padding: var(--safe-top) 0 var(--safe-bottom); }
+
+  /* Shared fade treatment: anything that scrolls or overlaps dissolves into black instead of using borders. */
+  .fade-x { -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent); mask-image: linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent); }
+  .fade-y { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent); mask-image: linear-gradient(to bottom, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent); }
+
+  .label { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--text-3); }
+  .mana { height: 13px; width: 13px; vertical-align: -2px; }
+
+  .card { position: relative; flex: none; aspect-ratio: 63 / 88; border-radius: var(--r-card); background: #111 center / cover; overflow: hidden; }
+  .card img { width: 100%; height: 100%; display: block; object-fit: cover; }
+  .card.tapped { transform: rotate(90deg) scale(.86); opacity: .7; }
+  .card.playable { box-shadow: var(--glow); }
+  .card.unplayable { opacity: .38; }
+  .card .badge { position: absolute; right: 3px; bottom: 3px; background: rgba(0,0,0,.78); border-radius: 999px; padding: 1px 6px; font-size: 10px; font-weight: 600; }
+
+  /* Opponents */
+  .opponents { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s2); padding: 0 var(--s3); }
+  .opp { position: relative; border-radius: var(--r-panel); overflow: hidden; padding: var(--s2); min-height: 132px; display: flex; flex-direction: column; justify-content: space-between; }
+  .opp::before { content: ""; position: absolute; inset: 0; background: var(--art) center 30% / cover; opacity: .42; }
+  .opp::after { content: ""; position: absolute; inset: 0; background: radial-gradient(120% 90% at 50% 0%, transparent 30%, #000 92%); }
+  .opp > * { position: relative; z-index: 1; }
+  .opp.active { box-shadow: inset 0 0 0 1px rgba(255,255,255,.5); }
+  .opp .name { font-weight: 600; font-size: 12px; }
+  .opp .model { font-size: 11px; color: var(--text-2); }
+  .opp .life { font-size: 30px; font-weight: 700; letter-spacing: -.02em; line-height: 1; }
+  .opp .stats { display: flex; gap: var(--s2); font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .opp .mini { display: flex; gap: 3px; margin-top: var(--s1); }
+  .opp .mini .card { width: 24px; aspect-ratio: 1; border-radius: 5px; }
+  .opp .status { font-size: 10px; color: var(--text-2); }
+
+  /* Center: phases + stack */
+  .phases { display: flex; justify-content: center; gap: var(--s3); padding: var(--s3) var(--s3) var(--s2); font-size: 11px; color: var(--text-3); }
+  .phases .on { color: var(--text); font-weight: 600; }
+  .stack { display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s4); min-height: 92px; }
+  .stack .card { width: 60px; box-shadow: 0 0 0 1px rgba(255,255,255,.25); }
+  .stack .what { font-size: 13px; }
+  .stack .what b { font-weight: 600; }
+  .stack .sub { color: var(--text-2); font-size: 12px; margin-top: 2px; }
+
+  /* You */
+  .you { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; min-height: 0; }
+  .row { display: flex; gap: var(--s2); padding: var(--s2) var(--s4); overflow: hidden; align-items: center; }
+  /* Battlefield uses art-crop tiles: full card text is unreadable at this size; tap a tile for the full card. */
+  .tile { flex: none; width: 64px; }
+  .tile .art { width: 64px; height: 47px; border-radius: var(--r-card); background: #111 center / cover; }
+  .tile.tapped .art { transform: rotate(90deg) scale(.74); opacity: .55; }
+  .tile .nm { font-size: 10px; color: var(--text-2); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chip { flex: none; display: flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border-radius: 999px; background: var(--surface); }
+  .chip .art { width: 26px; height: 26px; border-radius: 999px; background: #111 center / cover; }
+  .chip .n { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .chip .dots { display: flex; gap: 3px; }
+  .chip .dots i { width: 5px; height: 5px; border-radius: 999px; background: #fff; }
+  .chip .dots i.t { background: transparent; box-shadow: inset 0 0 0 1px var(--text-3); }
+  .youbar { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s4); }
+  .youbar .card { width: 36px; }
+  .youbar .life { font-size: 28px; font-weight: 700; line-height: 1; padding: 4px 10px; border-radius: 999px; }
+  .youbar .life.priority { box-shadow: var(--glow); }
+  .youbar .meta { color: var(--text-2); font-size: 12px; }
+  .youbar .pool { margin-left: auto; display: flex; gap: 3px; align-items: center; color: var(--text-2); font-size: 12px; }
+  .hand { height: 120px; margin-bottom: 22px; display: flex; justify-content: center; align-items: flex-end; padding: 0 var(--s4); }
+  .hand .card { width: 78px; margin: 0 -17px; transform-origin: 50% 120%; }
+
+  /* Game actions */
+  .actions { display: flex; gap: var(--s2); align-items: center; padding: var(--s3) var(--s4) 0; }
+  .btn { height: 44px; border-radius: 999px; padding: 0 var(--s4); display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 15px; background: var(--surface-2); color: var(--text); border: 0; }
+  .btn.primary { background: #fff; color: #000; flex: 1; }
+  .btn.quiet { background: transparent; color: var(--text-2); }
+  .prompt { padding: 0 var(--s4); font-size: 12px; color: var(--text-2); text-align: center; }
+
+  /* Overlay: card action sheet. Board recedes into black; sheet has no border, only a soft top fade. */
+  .scrim { position: absolute; inset: 0; background: radial-gradient(130% 80% at 50% 100%, rgba(0,0,0,.96) 35%, rgba(0,0,0,.72) 75%, rgba(0,0,0,.55)); z-index: 10; }
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 11; padding: 72px var(--s4) calc(var(--safe-bottom) + var(--s3)); background: linear-gradient(to bottom, transparent 0, rgba(0,0,0,.9) 56px, #000 100%); }
+  .sheet .hero { display: flex; gap: var(--s4); align-items: flex-end; margin-bottom: var(--s4); }
+  .sheet .hero .card { width: 150px; box-shadow: 0 18px 60px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.18); }
+  .sheet h2 { font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
+  .sheet .type { color: var(--text-2); font-size: 13px; margin-top: 2px; }
+  .sheet .oracle { color: var(--text-2); font-size: 13px; margin-top: var(--s2); max-width: 30ch; }
+  .opt { display: flex; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); border-radius: var(--r-panel); background: var(--surface); margin-bottom: var(--s2); }
+  .opt.first { background: #fff; color: #000; }
+  .opt.first .sub { color: rgba(0,0,0,.6); }
+  .opt .t { font-weight: 600; font-size: 15px; }
+  .opt .sub { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+  .opt .cost { margin-left: auto; display: flex; gap: 2px; }
+  .opt .cost .mana { width: 16px; height: 16px; }
+
+  /* Duo inner display: regular x regular */
+  .duo .opponents { grid-template-columns: repeat(3, 1fr); }
+  .duo .opp { min-height: 190px; }
+  .duo .opp .mini { flex-wrap: wrap; }
+  .duo .opp .mini .card { width: 36px; }
+  .duo .middle { display: grid; grid-template-columns: 1fr 220px; gap: var(--s3); padding: var(--s2) var(--s3) 0; }
+  .duo .log { font-size: 12px; color: var(--text-2); max-height: 150px; overflow: hidden; padding: var(--s2) 0; }
+  .duo .log p { padding: 3px 0; }
+  .duo .log p b { color: var(--text); font-weight: 600; }
+  .duo .tile, .duo .tile .art { width: 84px; }
+  .duo .tile .art { height: 62px; }
+  .duo .hand .card { width: 96px; margin: 0 -10px; }
+  .duo .hand { height: 140px; }
+  .duo .log { max-height: 130px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const q = new URLSearchParams(location.search);
+const device = q.get('device') || 'phone';
+const sheet = q.get('sheet');
+const C = (n) => window.CARD[n];
+const sym = (s) => `<img class="mana" src="https://svgs.scryfall.io/card-symbols/${s}.svg" alt="${s}">`;
+const cost = (m) => (m || '').match(/\{([^}]+)\}/g)?.map(x => sym(x.slice(1, -1).replace('/', ''))).join('') ?? '';
+
+// Shaped like the protocol observation for seat "you".
+const state = {
+  turn: 6, activeSeat: 'sonnet', step: 'main1', prioritySeat: 'you',
+  stack: [{ card: 'Wrath of God', controller: 'Sonnet', text: 'Destroy all creatures. They can\'t be regenerated.' }],
+  opponents: [
+    { id: 'opus', name: 'Seat 2', model: 'Claude Opus', commander: 'Krenko, Mob Boss', life: 31, hand: 4, library: 81, cmdDmg: 0, status: 'Waiting', mini: ['Goblin Chieftain', 'Skullclamp', 'Goblin Bombardment', 'Mountain'] },
+    { id: 'sonnet', name: 'Seat 3', model: 'Claude Sonnet', commander: 'The Ur-Dragon', life: 40, hand: 3, library: 79, cmdDmg: 0, status: 'Cast Wrath of God', mini: ['Utvara Hellkite', "Dragon's Hoard", 'Arcane Signet', 'Mountain'] },
+    { id: 'haiku', name: 'Seat 4', model: 'Claude Haiku', commander: 'Meren of Clan Nel Toth', life: 27, hand: 6, library: 77, cmdDmg: 7, status: 'Waiting', mini: ['Sakura-Tribe Elder', 'Sylvan Library', 'Swamp', 'Forest'] },
+  ],
+  you: {
+    life: 38, commander: "Atraxa, Praetors' Voice", tax: 2, hand: 7, library: 80,
+    permanents: ['Doubling Season', 'Rhystic Study', 'Llanowar Elves', 'Sol Ring', 'Arcane Signet', 'Smothering Tithe'],
+    lands: [['Command Tower', 1, 0], ['Forest', 3, 1], ['Island', 2, 0], ['Plains', 2, 1]],
+    handCards: [['Counterspell', 1], ['Swords to Plowshares', 1], ['Cyclonic Rift', 1], ['Beast Within', 1], ['Cultivate', 0], ['Eternal Witness', 0], ['Smothering Tithe', 0]],
+  },
+  log: [
+    ['Turn 6', 'Sonnet'], ['Sonnet played', 'Mountain'], ['Sonnet cast', 'Wrath of God'],
+    ['Opus passed', ''], ['Haiku passed', ''], ['Waiting for', 'you'],
+  ],
+};
+
+const steps = [['untap','Untap'],['upkeep','Upkeep'],['draw','Draw'],['main1','Main 1'],['combat','Combat'],['main2','Main 2'],['end','End']];
+const tile = (n, cls = '') => `<div class="tile ${cls}"><div class="art" style="background-image:url('${C(n).art}')"></div><div class="nm">${n}</div></div>`;
+const art = (n) => `<div class="card" style="background-image:url('${C(n).art}')"></div>`;
+const card = (n, cls = '', badge = '') => `<div class="card ${cls}"><img src="${C(n).img}" alt="${n}">${badge ? `<span class="badge">${badge}</span>` : ''}</div>`;
+
+const opp = (o) => `
+  <div class="opp ${state.activeSeat === o.id ? 'active' : ''}" style="--art:url('${C(o.commander).art}')">
+    <div><div class="name">${o.name}</div><div class="model">${o.model}</div></div>
+    <div>
+      <div class="life">${o.life}</div>
+      <div class="stats"><span>Hand ${o.hand}</span>${device === 'duo' ? `<span>Library ${o.library}</span>` : ''}${o.cmdDmg ? `<span>Cmdr ${o.cmdDmg}</span>` : ''}</div>
+      <div class="mini">${o.mini.map(art).join('')}</div>
+      ${device === 'duo' ? `<div class="status" style="margin-top:6px">${o.status}</div>` : ''}
+    </div>
+  </div>`;
+
+const topItem = state.stack[0];
+const stackHtml = `
+  <div class="stack">
+    ${card(topItem.card)}
+    <div><div class="label">Stack · 1</div><div class="what"><b>${topItem.controller}</b> cast <b>${topItem.card}</b></div><div class="sub">${topItem.text}</div></div>
+  </div>`;
+
+const phases = `<div class="phases">${steps.map(([k, l]) => `<span class="${k === state.step ? 'on' : ''}">${l}</span>`).join('')}</div>`;
+
+const you = state.you;
+const youHtml = `
+  <div class="you">
+    <div class="row permanents fade-x">${you.permanents.map((n, i) => tile(n, i === 2 ? 'tapped' : '')).join('')}</div>
+    <div class="row lands fade-x">${you.lands.map(([n, count, tapped]) => `<div class="chip"><div class="art" style="background-image:url('${C(n).art}')"></div><span class="n">${count}</span><span class="dots">${Array.from({ length: count }, (_, i) => `<i class="${i < tapped ? 't' : ''}"></i>`).join('')}</span></div>`).join('')}</div>
+    <div class="youbar">
+      ${card(you.commander, '', '+' + you.tax)}
+      <div class="life priority">${you.life}</div>
+      <div class="meta">You · Lib ${you.library}</div>
+      <div class="pool">Pool ${sym('U')}${sym('U')}</div>
+    </div>
+    <div class="hand">${you.handCards.map(([n, ok], i, a) => {
+      const mid = (a.length - 1) / 2, rot = (i - mid) * 4, lift = Math.abs(i - mid) * 5;
+      return card(n, ok ? 'playable' : 'unplayable').replace('class="card', `style="transform: rotate(${rot}deg) translateY(${lift}px)" class="card`);
+    }).join('')}</div>
+    <div class="prompt">Sonnet cast Wrath of God. You have priority.</div>
+    <div class="actions">
+      <button class="btn quiet">Stops</button>
+      <button class="btn primary">Pass</button>
+      <button class="btn">End turn</button>
+    </div>
+  </div>`;
+
+const sheetHtml = !sheet ? '' : `
+  <div class="scrim"></div>
+  <div class="sheet">
+    <div class="hero">
+      ${card('Counterspell')}
+      <div>
+        <h2>Counterspell</h2>
+        <div class="type">Instant · ${cost(C('Counterspell').mana)}</div>
+        <div class="oracle">Counter target spell.</div>
+      </div>
+    </div>
+    <div class="opt first"><div><div class="t">Cast, targeting Wrath of God</div><div class="sub">Pays from your pool</div></div><div class="cost">${cost('{U}{U}')}</div></div>
+    <div class="opt"><div><div class="t">Cast and choose payment</div><div class="sub">Pick which lands and mana to use</div></div></div>
+    <div class="opt" style="background:transparent;justify-content:center"><div class="t" style="color:var(--text-2)">Cancel</div></div>
+  </div>`;
+
+const logHtml = `<div class="log fade-y">${state.log.map(([a, b]) => `<p>${a} <b>${b}</b></p>`).join('')}</div>`;
+
+document.getElementById('root').innerHTML = `
+  <div class="screen ${device}">
+    <div class="opponents">${state.opponents.map(opp).join('')}</div>
+    ${phases}
+    ${device === 'duo' ? `<div class="middle">${stackHtml}${logHtml}</div>` : stackHtml}
+    ${youHtml}
+    ${sheetHtml}
+  </div>`;
+</script>
+</body>
+</html>
