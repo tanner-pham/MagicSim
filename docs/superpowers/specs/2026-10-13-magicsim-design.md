@@ -187,7 +187,7 @@ One Messages-API conversation per seat per game (`@anthropic-ai/sdk`).
 
 - **Settings:** server URL, access token (Keychain via `expo-secure-store`), default opponent models, stops.
 - **Decks:** list (commander art, name, color identity, card count, validity). Import by pasting text or picking a `.txt`/`.dek` file; the server parses with Forge's recognizer and returns resolved cards plus problems (unrecognized names, not singleton, color identity, deck size). Deck detail groups cards by type with images. Decks are stored on device as JSON files (`expo-file-system`); export copies the text back out.
-- **New game:** pick your deck; for each of 3 opponents pick a deck and a controller (a Claude model or Forge AI); start.
+- **New game:** pick your deck; for each of 3 opponents pick a deck (one of your saved decks or one of Forge's 180 bundled Commander precons) and a controller (a Claude model or Forge AI); start.
 - **Game:** per the approved mockups. Opponent tiles open that player's full board in a sheet; zone viewers for graveyard/exile/revealed cards; long-press any card for full card and oracle text; log sheet on phone, sidebar on regular width; game-over summary.
 
 ### 7.2 Visual spec
@@ -218,7 +218,8 @@ Per-step toggles (like Arena) stored on device and sent at game start. Defaults:
 
 ## 8. Server (`server/`)
 
-- `GET /health` · `GET /models` · `POST /decks/parse` · `POST /games` · `GET /games/current` · `WS /games/current/stream`.
+- `GET /health` · `GET /models` · `GET /decks/precons` · `POST /decks/parse` · `POST /games` · `GET /games/current` · `WS /games/current/stream`.
+- `GET /decks/precons` lists Forge's bundled Commander precons (name, commander, colors) so opponents need no imported decks; `POST /games` accepts either a saved decklist or a precon name per seat.
 - Auth: `Authorization: Bearer <MAGICSIM_TOKEN>` on every route except `/health`, compared in constant time. Request bodies validated with the protocol zod schemas.
 - One active game. Starting a new game ends the current one after confirmation in the app.
 - Reconnect: on WS connect, send the latest observation, the pending decision (if any), and events since the client's last `seq`.
@@ -256,6 +257,7 @@ Secrets the autonomous run needs but cannot create: `ANTHROPIC_API_KEY`, `EXPO_T
 | Forge has no documented headless API; static singletons and asset paths assume a GUI | Follow `SimulateMatch` and the network test harness; spike this first (milestone 1) before anything else depends on it |
 | Mapping every Forge prompt to a typed decision | Generic fallback decision + `unmapped` logging; reference-deck full games gate milestone completion |
 | Forge upstream churn | Pinned SHA; upgrades are deliberate |
+| Forge AI can think for minutes on crowded boards (seen in the spike) and ignores thread interrupts | Turn limits in all automated games; M2 investigates a safe per-decision deadline for Forge-AI seats (abandoning a decision mid-thought is unsafe because the AI may touch game state); at minimum the app shows "Waiting for Forge AI" so a long pause is visible |
 | Forge memory (~1.5–2 GB heap with all cards) | Fly machine with 4 GB; auto-stop keeps cost down |
 | Expo SDK 58 is beta | Pin it; move to stable when released |
 | Model cost/latency per game | Auto-pass, stops, per-seat token budget, prompt caching |
