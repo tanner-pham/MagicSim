@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          fetch-depth: 1
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Forge SHA
+        id: forge
+        run: echo "sha=$(git -C forge rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.m2/repository
+            .tools
+          key: maven-${{ steps.forge.outputs.sha }}-${{ hashFiles('bridge/pom.xml') }}
+          restore-keys: maven-${{ steps.forge.outputs.sha }}-
+
+      - run: bash scripts/setup.sh
+      - run: bash scripts/verify.sh

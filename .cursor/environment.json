@@ -1,0 +1,7 @@
+{
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "user": "ubuntu",
+  "install": "bash scripts/setup.sh"
+}
